@@ -1,0 +1,1 @@
+This is a tool that scrapes information from a given SoftUni course and adds the course time as an event in google calendar.
