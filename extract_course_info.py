@@ -5,7 +5,6 @@ import re
 import urllib.request
 import urllib.parse
 from scrapers import CourseTitleScraper, LectureNameandDateScraper
-import pprint
 
 BULGARIAN_DATE_HEX = '\\xd0\\x94\\xd0\\xb0\\xd1\\x82\\xd0\\xb0:'  # this is Дата: in hexadecimal format and is used to find the date/time of a lecture
 
@@ -14,39 +13,36 @@ def extract_course_info(url: str) -> list:
     with urllib.request.urlopen(url) as response:
         html_file = str(response.read())
 
-        # get the lecture's title
-        course_title_scraper = CourseTitleScraper()
-        course_title_scraper.feed(html_file)
-        course_title = decode_data([course_title_scraper.title])[0]
+    lparser = LectureNameandDateScraper()
+    lparser.feed(html_file)
+    raw_data = lparser.data  # this holds the somewhat filtered data from the HTML file
+    lectures_count = lparser.lectures  # this is the count of the lectures
 
-        lparser = LectureNameandDateScraper()
-        lparser.feed(html_file)
+    # get the course title
+    course_title = extract_course_title(html_file)
 
-        raw_data = lparser.data  # this hold the somewhat filtered data from the HTML file
-        lectures_count = lparser.lectures  # this is the count of the lectures
-    course_title = filter_course_title(course_title)
-    # this will hold the data for lecture/time but it will have some values that are not lectures
-    lectures_data_raw = extract_lecture_data(raw_data)  # type: list
-    '''
-    because we do not have any empty values at the end of the array and the only empty values we have are at the start before the lectures start
-    appearing, we can just get the last [LECTURES_COUNT]*2 elements from the array.
-    It's multiplied by two, because each lecture is followed by a string containing the date and time of the lecture'''
-    lectures_data_raw = lectures_data_raw[-lectures_count * 2:]
-
-    lectures_data = decode_data(lectures_data_raw)
-    lectures_data = add_course_title_to_lectures(lectures_data, course_title)
-
-    # TODO: If the lecture name can't be parsed properly, say Unknown
-    pprint.pprint(lectures_data)
-    print(lectures_count)
-    print(len(raw_data))
-
-    # covert the list into a list of tuples (Lecture name, Lecture Date)
-    lectures_data = group_lectures(lectures_data)
+    # this will hold the data for lecture/time
+    lectures_data_raw = extract_lecture_data(raw_data, lectures_count)  # type: list
+    lectures_data = polish_lecture_data(lectures_data_raw, course_title)
 
     return lectures_data
 
-def extract_lecture_data(raw_data):
+def polish_lecture_data(lectures_data: list, course_title: str) -> list:
+    ''' polish the lecture data by decoding it, grouping it, removing invalid names and etc'''
+    # decode the data into utf-8
+    lectures_data = decode_data(lectures_data)
+    # covert the list into a list of tuples (Lecture name, Lecture Date)
+    lectures_data = group_lectures(lectures_data)
+    # combine lectures with identical dates
+    lectures_data = combine_identical_lectures(lectures_data)
+    # remove invalid lecture names
+    lectures_data = remove_invalid_lecture_names(lectures_data)
+    # add the course title in front of every lecture name
+    lectures_data = add_course_title_to_lectures(lectures_data, course_title)
+
+    return lectures_data
+
+def extract_lecture_data(raw_data, lectures_count):
     """
            Expected array after scraping the HTML is:
 
@@ -84,8 +80,21 @@ def extract_lecture_data(raw_data):
                     raw_lecture_data.append(lecture)
                     raw_lecture_data.append(time)
 
-    return raw_lecture_data
+    '''
+        because we do not have any empty values at the end of the array and the only empty values we have are at the start before the lectures start
+        appearing, we can just get the last [LECTURES_COUNT]*2 elements from the array.
+        It's multiplied by two, because each lecture is followed by a string containing the date and time of the lecture'''
+    return raw_lecture_data[-lectures_count * 2:]
 
+
+def extract_course_title(html):
+    ''' returns the title of the course'''
+    course_title_scraper = CourseTitleScraper()
+    course_title_scraper.feed(html)
+    course_title = decode_data([course_title_scraper.title])[0]  # decode it into utf-8
+    course_title = filter_course_title(course_title)  # filter the course title
+
+    return course_title
 
 def group_lectures(lectures: list):
     """ this function groups the expected list's contents into tuples of (lecture_name,lecture_date)
@@ -139,6 +148,7 @@ def is_number(s):
         return True
     except ValueError:
         return False
+
 
 def get_last_element_after_date(raw_data, index):
     ''' this function goes backwards in the array to find the last element that is after an element with date information
@@ -201,7 +211,7 @@ def decode_data(raw_data):
         # convert it to bytes, remove the unicode escapes and encode it back into latin1
         i = bytes(i, 'latin1').decode('unicode_escape').encode('latin1')
 
-        decoded_lectures.append(convert_byte_to_string(i))
+        decoded_lectures.append(convert_byte_to_string(i).strip())
 
     return decoded_lectures
 
@@ -217,14 +227,10 @@ def filter_course_title(title:str):
 
     return modified_title
 
+
 def add_course_title_to_lectures(lectures_data: list, course_title: str):
     """ This function goes through the list with data from lectures and adds
-    the course name in front of each lecture name while ignoring the ones that contain the date"""
-    for idx, data in enumerate(lectures_data):
-        if 'Дата:' not in data:
-            # most likely is the lecture's name
-            modified_data = "{title} - {lname}".format(title=course_title, lname=data)
-            lectures_data[idx] = modified_data  # update the data
+    the course name in front of each lecture name"""
 
-    return lectures_data
+    return [("{title} - {lname}".format(title=course_title, lname=lecture_name), lec_date) for lecture_name, lec_date in lectures_data]
 
