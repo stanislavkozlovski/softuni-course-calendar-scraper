@@ -105,13 +105,18 @@ def convert_byte_to_string(i):
         decoded_string = str(i, 'utf-8')
         return decoded_string
     except UnicodeDecodeError as e:
-        if e.reason == 'invalid continuation byte':
-            # get the position of the error
+        # get the position of the error
+        if e.reason == 'invalid start byte':
+            start_pos = e.args[-3]
+            end_pos = e.args[-2]
+            i = i[0:start_pos] + i[end_pos:]
+        elif e.reason == 'invalid continuation byte':
+            print(e.reason)
             bad_position = e.args[-2]
             i = i[0:bad_position] + b'\xa0' + i[bad_position:]
-            return convert_byte_to_string(i)
+        return convert_byte_to_string(i)
 
-def decode_data(array):
+def decode_data(raw_data):
     '''
     This function iterates through the array and decodes all the escaped latin1 characters
     Example:
