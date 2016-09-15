@@ -1,84 +1,86 @@
 '''
 This module takes care of scraping the webpage and filtering out the lecture names and dates
 '''
+import re
 import urllib.request
 import urllib.parse
-from html.parser import HTMLParser
+from scrapers import CourseTitleScraper, LectureNameandDateScraper
 import pprint
 
 BULGARIAN_DATE_HEX = '\\xd0\\x94\\xd0\\xb0\\xd1\\x82\\xd0\\xb0:'  # this is Дата: in hexadecimal format and is used to find the date/time of a lecture
 
 
-"""
-Expected array after scraping the HTML is:
+def extract_course_info(url: str):
+    with urllib.request.urlopen(url) as response:
+        html_file = str(response.read())
 
-[some useless stuff]
-Lecture Name
-bullet-points (if any)
-Lecture date and time
-Lecture Name
-bullet-points (if any)
-Lecture date and time
-... and so on for each lecture until the end
+        # get the lecture's title
+        course_title_scraper = CourseTitleScraper()
+        course_title_scraper.feed(html_file)
+        course_title = decode_data([course_title_scraper.title])[0]
 
-What we are doing is getting all that information and saving only the lecture name and date.
-We get the date just by searcing for the hex version of Дата:
-We get the lecture name with get_last_element_after_date by
-iterating backwards in the array of lines and finding the last element before a date line.
-Naturally, this means that the first lecture does not have a date behind it and we kind of handle
-that
-"""
+        lparser = LectureNameandDateScraper()
+        lparser.feed(html_file)
 
-class LectureNameandDateScraper(HTMLParser):
-    recording = 0  # this tells us if we want to scrape the data
-    data = []  # this will hold the data we've scraped
-    def __init__(self):
-        HTMLParser.__init__(self)
-        self.lectures = 0
+        raw_data = lparser.data  # this hold the somewhat filtered data from the HTML file
+        lectures_count = lparser.lectures  # this is the count of the lectures
+    course_title = filter_course_title(course_title)
+    # this will hold the data for lecture/time but it will have some values that are not lectures
+    lectures_data_raw = extract_lecture_data(raw_data)  # type: list
+    '''
+    because we do not have any empty values at the end of the array and the only empty values we have are at the start before the lectures start
+    appearing, we can just get the last [LECTURES_COUNT]*2 elements from the array.
+    It's multiplied by two, because each lecture is followed by a string containing the date and time of the lecture'''
+    lectures_data_raw = lectures_data_raw[-lectures_count * 2:]
 
-    def handle_starttag(self, tag, attributes):
-        if tag != 'div' and tag != 'strong':
-            # we dont want information from other tags"""
-            return
-        if self.recording:
-            self.recording += 1
-            return
-        for name, value in attributes:
-            if name == 'class' and value == 'lecture-paragraph html-raw-wrapper':
-                self.lectures += 1
-                break
-            elif tag == 'strong':
-                break
-            else:
-                return
-        self.recording = 1
+    lectures_data = decode_data(lectures_data_raw)
+    lectures_data = add_course_title_to_lectures(lectures_data, course_title)
 
-    def handle_endtag(self, tag):
-        if (tag == 'div' or tag == 'strong') and self.recording:
-            self.recording -= 1
+    # TODO: If the lecture name can't be parsed properly, say Unknown
+    pprint.pprint(lectures_data)
+    print(lectures_count)
+    print(len(raw_data))
 
-    def handle_data(self, data):
-        if self.recording:
-            self.data.append(data)
+def extract_lecture_data(raw_data):
+    """
+           Expected array after scraping the HTML is:
 
-class LectureTitleScraper(HTMLParser):
-    recording = False  # this tells us if we want to scrape the data
-    title = ''  # this will hold the data we've scraped
+           [a lot of useless stuff]
+           Lecture Name
+           bullet-points (if any)
+           Lecture date and time
+           Lecture Name
+           bullet-points (if any)
+           Lecture date and time
+           ... and so on for each lecture until the end
 
-    def __init__(self):
-        HTMLParser.__init__(self)
+           What we are doing is getting all that information and saving only the lecture name and date.
+           We get the date just by searcing for the hex version of Дата:
+           We get the lecture name with get_last_element_after_date by
+           iterating backwards in the array of lines and finding the last element before a date line.
+           Naturally, this means that the first lecture does not have a date behind it and we kind of handle
+           that
+           """
+    raw_lecture_data = []
+    for i in range(1, len(raw_data)):
+        if BULGARIAN_DATE_HEX not in raw_data[i]:
+            if i + 1 < len(raw_data):  # check to not go beyond the range of the array
+                if BULGARIAN_DATE_HEX in raw_data[i + 1]:
+                    """ Only gets values from raw_data that are TEXT[i] followed by A DATE TEXT[i+1]"""
+                    lecture_index = get_last_element_after_date(raw_data, i)
 
-    def handle_starttag(self, tag, attributes):
-        if tag == 'title':
-            self.recording = True
+                    lecture = raw_data[lecture_index]
+                    time = raw_data[i + 1]  # i+1 is always a date
 
-    def handle_endtag(self, tag):
-        if tag == 'title':
-            self.recording = False
+                    if is_number(lecture):
+                        # if the lecture is only something like 5.00, it's invalid and there's no reason to append it
+                        continue
 
-    def handle_data(self, data):
-        if self.recording:
-            self.title = data
+                    raw_lecture_data.append(lecture)
+                    raw_lecture_data.append(time)
+
+    return raw_lecture_data
+
 
 def is_number(s):
     ''' quick method to check if a string is a number. It's used because we get some of these
@@ -135,6 +137,7 @@ def convert_byte_to_string(i):
             i = i[0:bad_position] + b'\xa0' + i[bad_position:]
         return convert_byte_to_string(i)
 
+
 def decode_data(raw_data):
     '''
     This function iterates through the array and decodes all the escaped latin1 characters
@@ -153,51 +156,30 @@ def decode_data(raw_data):
 
     return decoded_lectures
 
-def extract_course_info(url: str):
 
-    with urllib.request.urlopen(url) as response:
-        html_file = str(response.read())
-        # get the lecture's title
-        lecture_title_scraper = LectureTitleScraper()
-        lecture_title_scraper.feed(html_file)
-        lecture_title = decode_data([lecture_title_scraper.title])[0]
-        print(lecture_title)
-        lparser = LectureNameandDateScraper()
-        lparser.feed(html_file)
+def filter_course_title(title:str):
+    """ This function strips the course title from unecessary information
+        example, given: Express.js Development - октомври 2016 - Софтуерен университет
+        we return: Express.js Development
+    """
 
-        raw_data = lparser.data  # this hold the somewhat filtered data from the HTML file
-        lectures_data_raw = []  # this will hold the data for lecture/time but it will have some values that are not lectures
-        lectures_count = lparser.lectures  # this is the count of the lectures
+    regex_pattern = r'(.+?)(\s|\s-\s)(януари|февруари|март|април|май|юни|юли|август|септември|октомври|ноември|декември).+'
+    modified_title = re.match(regex_pattern, title).group(1)
 
-        for i in range(1, len(raw_data)):
-            if BULGARIAN_DATE_HEX not in raw_data[i]:
-                if i+1 < len(raw_data):  # check to not go beyond the range of the array
-                    if BULGARIAN_DATE_HEX in raw_data[i+1]:
-                        """ Only gets values from raw_data that are TEXT[i] followed by A DATE TEXT[i+1]"""
-
-                        lecture_index = get_last_element_after_date(raw_data, i)
-                        lecture = raw_data[lecture_index]
-                        time = raw_data[i + 1]  # i+1 is always a date, otherwise we wouldn't get in this if
-
-                        if is_number(lecture):  # if the lecture is only something like 5.00, it's invalid and there's no reason to continue
-                            continue
-
-                        lectures_data_raw.append(lecture)
-                        lectures_data_raw.append(time)
-    '''
-    because we do not have any empty values at the end of the array and the only empty values we have are at the start before the lectures start
-    appearing, we can just get the last [LECTURES_COUNT]*2 elements from the array.
-    It's multiplied by two, because each lecture is followed by a string containing the date and time of the lecture'''
-
-    raw_data = lectures_data_raw[-lectures_count * 2:]
-
-    # TODO: add the course name to each lecture name using regex most likely
-    lectures_data = decode_data(raw_data)
-
-    # TODO: If the lecture name can't be parsed properly, say Unknown
-    pprint.pprint(lectures_data)
-    print(lectures_count)
-    print(len(raw_data))
+    return modified_title
 
 
-extract_course_info('https://softuni.bg/trainings/1463/express-js-development-october-2016')
+
+def add_course_title_to_lectures(lectures_data: list, course_title: str):
+    """ This function goes through the list with data from lectures and adds
+    the course name in front of each lecture name while ignoring the ones that contain the date"""
+    for idx, data in enumerate(lectures_data):
+        if 'Дата:' not in data:
+            # most likely is the lecture's name
+            modified_data = "{title} - {lname}".format(title=course_title, lname=data)
+            lectures_data[idx] = modified_data  # update the data
+
+    return lectures_data
+
+
+extract_course_info('https://softuni.bg/trainings/1376/java-advanced-oop-july-2016')
