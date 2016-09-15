@@ -61,6 +61,25 @@ class LectureDateTimeParser(HTMLParser):
         if self.recording:
             self.data.append(data)
 
+class LectureTitleScraper(HTMLParser):
+    recording = False  # this tells us if we want to scrape the data
+    title = ''  # this will hold the data we've scraped
+
+    def __init__(self):
+        HTMLParser.__init__(self)
+
+    def handle_starttag(self, tag, attributes):
+        if tag == 'title':
+            self.recording = True
+
+    def handle_endtag(self, tag):
+        if tag == 'title':
+            self.recording = False
+
+    def handle_data(self, data):
+        if self.recording:
+            self.title = data
+
 def is_number(s):
     ''' quick method to check if a string is a number. It's used because we get some of these
     garbage(to us) values in scraping the HTML, like : '5.00' '''
