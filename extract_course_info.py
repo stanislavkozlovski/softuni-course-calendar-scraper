@@ -101,6 +101,36 @@ def group_lectures(lectures: list):
     return lectures
 
 
+def combine_identical_lectures(lectures: list):
+    """
+    this function combines lectures that have the absolute same date into one lecture
+    """
+    combined_lectures = []
+    for idx, tupl in enumerate(lectures):
+        if tupl:
+            lecture_name = tupl[0]
+            lecture_date = tupl[1]
+
+            # search for the same date
+            for search_idx in range(idx+1, len(lectures)):
+                if lectures[search_idx][1] == lecture_date:
+                    # combine the two names into one
+                    lecture_name += '; {other_lecture}'.format(other_lecture=lectures[search_idx][0])
+                    # if we find it, convert it to none
+                    lectures[search_idx] = None
+            combined_lectures.append((lecture_name, lecture_date))
+
+    return combined_lectures
+
+
+def remove_invalid_lecture_names(lectures: list):
+    ''' this function goes through the array and replaces an invalid lecture name with Unknown
+        Currently, we know that in some courses, the program puts the lecture name the same as the date,
+        this function is specifically done to combat that. Further testing will hopefully find out more
+        cases in which the lecture names might be invalid'''
+    return [(lecture_name if 'Дата:' not in lecture_name else "Unknown", lecture_date) for lecture_name, lecture_date in lectures]
+
+
 def is_number(s):
     ''' quick method to check if a string is a number. It's used because we get some of these
     garbage(to us) values in scraping the HTML, like : '5.00' '''
