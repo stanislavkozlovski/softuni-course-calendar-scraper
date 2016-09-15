@@ -29,7 +29,7 @@ Naturally, this means that the first lecture does not have a date behind it and 
 that
 """
 
-class LectureDateTimeParser(HTMLParser):
+class LectureNameandDateScraper(HTMLParser):
     recording = 0  # this tells us if we want to scrape the data
     data = []  # this will hold the data we've scraped
     def __init__(self):
@@ -153,44 +153,51 @@ def decode_data(raw_data):
 
     return decoded_lectures
 
+def extract_course_info(url: str):
 
-regex_pattern = r'.*?softuni.bg\/trainings\/\d+?\/(.+?)-(january|february|march|april|may|june|july|august|september|october|november|decemder)-\d{4}'
+    with urllib.request.urlopen(url) as response:
+        html_file = str(response.read())
+        # get the lecture's title
+        lecture_title_scraper = LectureTitleScraper()
+        lecture_title_scraper.feed(html_file)
+        lecture_title = decode_data([lecture_title_scraper.title])[0]
+        print(lecture_title)
+        lparser = LectureNameandDateScraper()
+        lparser.feed(html_file)
 
-with urllib.request.urlopen('https://softuni.bg/trainings/1425/web-fundamentals-html-css-august-2016') as response:
-    html_file = str(response.read())
-    lparser = LectureDateTimeParser()
-    lparser.feed(html_file)
+        raw_data = lparser.data  # this hold the somewhat filtered data from the HTML file
+        lectures_data_raw = []  # this will hold the data for lecture/time but it will have some values that are not lectures
+        lectures_count = lparser.lectures  # this is the count of the lectures
 
-    raw_data = lparser.data  # this hold the somewhat filtered data from the HTML file
-    lectures_data_raw = []  # this will hold the data for lecture/time but it will have some values that are not lectures
-    lectures_count = lparser.lectures  # this is the count of the lectures
+        for i in range(1, len(raw_data)):
+            if BULGARIAN_DATE_HEX not in raw_data[i]:
+                if i+1 < len(raw_data):  # check to not go beyond the range of the array
+                    if BULGARIAN_DATE_HEX in raw_data[i+1]:
+                        """ Only gets values from raw_data that are TEXT[i] followed by A DATE TEXT[i+1]"""
 
-    for i in range(1, len(raw_data)):
-        if BULGARIAN_DATE_HEX not in raw_data[i]:
-            if i+1 < len(raw_data):  # check to not go beyond the range of the array
-                if BULGARIAN_DATE_HEX in raw_data[i+1]:
-                    """ Only gets values from raw_data that are TEXT[i] followed by A DATE TEXT[i+1]"""
+                        lecture_index = get_last_element_after_date(raw_data, i)
+                        lecture = raw_data[lecture_index]
+                        time = raw_data[i + 1]  # i+1 is always a date, otherwise we wouldn't get in this if
 
-                    lecture_index = get_last_element_after_date(raw_data, i)
-                    lecture = raw_data[lecture_index]
-                    time = raw_data[i + 1]  # i+1 is always a date, otherwise we wouldn't get in this if
+                        if is_number(lecture):  # if the lecture is only something like 5.00, it's invalid and there's no reason to continue
+                            continue
 
-                    if is_number(lecture):  # if the lecture is only something like 5.00, it's invalid and there's no reason to continue
-                        continue
+                        lectures_data_raw.append(lecture)
+                        lectures_data_raw.append(time)
+    '''
+    because we do not have any empty values at the end of the array and the only empty values we have are at the start before the lectures start
+    appearing, we can just get the last [LECTURES_COUNT]*2 elements from the array.
+    It's multiplied by two, because each lecture is followed by a string containing the date and time of the lecture'''
 
-                    lectures_data_raw.append(lecture)
-                    lectures_data_raw.append(time)
-'''
-because we do not have any empty values at the end of the array and the only empty values we have are at the start before the lectures start
-appearing, we can just get the last [LECTURES_COUNT]*2 elements from the array.
-It's multiplied by two, because each lecture is followed by a string containing the date and time of the lecture'''
+    raw_data = lectures_data_raw[-lectures_count * 2:]
 
-raw_data = lectures_data_raw[-lectures_count * 2:]
+    # TODO: add the course name to each lecture name using regex most likely
+    lectures_data = decode_data(raw_data)
 
-# TODO: add the course name to each lecture name using regex most likely
-lectures_data = decode_data(raw_data)
+    # TODO: If the lecture name can't be parsed properly, say Unknown
+    pprint.pprint(lectures_data)
+    print(lectures_count)
+    print(len(raw_data))
 
-# TODO: If the lecture name can't be parsed properly, say Unknown
-pprint.pprint(lectures_data)
-print(lectures_count)
-print(len(raw_data))
+
+extract_course_info('https://softuni.bg/trainings/1463/express-js-development-october-2016')
