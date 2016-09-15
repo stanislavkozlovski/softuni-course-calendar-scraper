@@ -10,7 +10,7 @@ import pprint
 BULGARIAN_DATE_HEX = '\\xd0\\x94\\xd0\\xb0\\xd1\\x82\\xd0\\xb0:'  # this is Дата: in hexadecimal format and is used to find the date/time of a lecture
 
 
-def extract_course_info(url: str):
+def extract_course_info(url: str) -> list:
     with urllib.request.urlopen(url) as response:
         html_file = str(response.read())
 
@@ -40,6 +40,11 @@ def extract_course_info(url: str):
     pprint.pprint(lectures_data)
     print(lectures_count)
     print(len(raw_data))
+
+    # covert the list into a list of tuples (Lecture name, Lecture Date)
+    lectures_data = group_lectures(lectures_data)
+
+    return lectures_data
 
 def extract_lecture_data(raw_data):
     """
@@ -80,6 +85,20 @@ def extract_lecture_data(raw_data):
                     raw_lecture_data.append(time)
 
     return raw_lecture_data
+
+
+def group_lectures(lectures: list):
+    """ this function groups the expected list's contents into tuples of (lecture_name,lecture_date)
+    expected input: ['Data Definition and Datatypes',
+                    'Дата: 26-ти септември, 18:00 - 22:00']
+
+    output: [('Data Definition and Datatypes', 'Дата: 26-ти септември, 18:00 - 22:00')]
+    """
+    if len(lectures) % 2 != 0:
+        raise Exception
+    else:
+        lectures = [(lectures[x], lectures[x+1]) for x in range(0, len(lectures), 2)]
+    return lectures
 
 
 def is_number(s):
@@ -168,8 +187,6 @@ def filter_course_title(title:str):
 
     return modified_title
 
-
-
 def add_course_title_to_lectures(lectures_data: list, course_title: str):
     """ This function goes through the list with data from lectures and adds
     the course name in front of each lecture name while ignoring the ones that contain the date"""
@@ -181,5 +198,3 @@ def add_course_title_to_lectures(lectures_data: list, course_title: str):
 
     return lectures_data
 
-
-extract_course_info('https://softuni.bg/trainings/1376/java-advanced-oop-july-2016')
