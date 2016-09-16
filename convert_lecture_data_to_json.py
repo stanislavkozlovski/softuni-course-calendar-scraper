@@ -14,63 +14,76 @@ a sample of how it should look like:
         }
     }
 '''
-
-SOFTUNI_ADDRESS = 'ул. Тинтява 15-17, етаж 2, 1113 Sofia, Bulgaria'
+import datetime
+import math
+import re
+SOFTUNI_ADDRESS = 'Software University, Sofia'
+SOFIA_TIMEZONE = 'Europe/Sofia'
+BULGARIAN_MONTHS = {'януари': 1, 'февруари': 2, 'март': 3, 'април': 4, 'май': 5, 'юни': 6, 'юли': 7, 'август': 8, 'септември': 9, 'октомври': 10, 'ноември': 11, 'декември': 12}
 
 def convert_lectures(lectures: list):
     return list(map(lambda x: convert_lecture_to_json(x), lectures))
 
 def convert_lecture_to_json(lecture):
+    ''' creates the JSON object '''
     lecture_name = lecture[0]
-    lecture_date = lecture[1]
-    pass
+    lecture_start_date, lecture_end_date = convert_date_to_iso8601(lecture[1])
 
-def convert_date_to_iso8601(date):
-    regex_pattern = r'Дата:\s+(\d{1,2}).*(януари|февруари|март|април|май|юни|юли|август|септември|октомври|ноември|декември).+?(\d{1,2}:\d{1,2}).+?(\d{1,2}:\d{1,2})'
-    import re
-    match = re.match(regex_pattern, date)
+    event = {
+        'summary': lecture_name,
+        'location': SOFTUNI_ADDRESS,
+        'start': {
+            'dateTime': lecture_start_date,
+            'timeZone': SOFIA_TIMEZONE
+        },
+        'end': {
+            'dateTime': lecture_end_date,
+            'timeZone': SOFIA_TIMEZONE
+        }
+    }
 
-    date_day = match.group(2)  # 4
-    date_month = convert_bulgarian_month_to_number(match.group(3))  # Октомври -> !0  type: int
-    start_time = match.group(4)  # 18:30
-    end_time = match.group(5)  # 22:00
-    pass
+    return event
 
-def convert_bulgarian_month_to_number(month):
+def convert_date_to_iso8601(date) -> tuple:
+    """ converts the date to a string object with the iso8601 format, which we give to the google API as a string"""
+    date_pattern = r'Дата:\s+(\d{1,2}).*(януари|февруари|март|април|май|юни|юли|август|септември|октомври|ноември|декември).+?(\d{1,2}(:|;)\d{1,2}).+?(\d{1,2}(:|;)\d{1,2})'
+    match = re.match(date_pattern, date)
+
+    date_day = match.group(1).zfill(2)  # 04
+
+    date_month = BULGARIAN_MONTHS[match.group(2)] # Октомври -> !0  type: str
+
+    date_year = str(datetime.datetime.now().year)
+    # there are typos in some lectures where it's 18;30 instead of 18:30
+    start_time = (match.group(3) + ':00').replace(';', ':')  # 18:30:00
+    end_time = (match.group(5) + ':00').replace(';', ':') # 22:00:00
+
+    utc_offset = get_utc_offset()  # type: str
+
+    start_date = '{year}-{month}-{day}T{time}{utc_offset}'.format(year=date_year, month=date_month, day=date_day,
+                                                            time=start_time, utc_offset=utc_offset)
+    end_date = '{year}-{month}-{day}T{time}{utc_offset}'.format(year=date_year, month=date_month, day=date_day,
+                                                            time=end_time, utc_offset=utc_offset)
+
+    return (start_date, end_date)
+
+def get_utc_offset() -> str:
     '''
-    this function converts a bulgarian month string into the number of the corresponding month
-    October in bulgarian is Октомври, which will return the number 10
-    :param month: a string in bulgarian, containing the month
-    :return: int, the month's number
+    function gets the difference between our timezones in hours and returns a string that will be put into the iso8601 format
+    if we're 3 hours ahead, we will return +03:00
+    if we're 3 hours behind, we will return -03:00
+    :return:
     '''
-    month_number = 0
+    now = datetime.datetime.now()
+    local_hour = now.hour
+    utc_hour = now.utcnow().hour
+    utc_offset = local_hour - utc_hour
 
-    if month == 'януари':
-        month_number = 1
-    elif month == 'февруари':
-        month_number = 2
-    elif month == 'март':
-        month_number = 3
-    elif month == 'април':
-        month_number = 4
-    elif month == 'май':
-        month_number = 5
-    elif month == 'юни':
-        month_number = 6
-    elif month == 'юли':
-        month_number = 7
-    elif month == 'август':
-        month_number = 8
-    elif month == 'септември':
-        month_number = 9
-    elif month == 'октомври':
-        month_number = 10
-    elif month == 'ноември':
-        month_number = 11
-    elif month == 'декември':
-        month_number = 12
+    str_preamble = '+' if utc_offset >= 0 else '-'
 
-    if not month_number:
-        raise Exception
+    # convert the fraction and the whole to a string. Works for ints and floats
+    fraction, whole = math.modf(utc_offset)
+    fraction = str(fraction)[2:].zfill(2)  # from 0.5 get 05 only
+    whole = str(int(whole)).zfill(2)
 
-    return month_number
+    return '{preamble}{whole}:{fraction}'.format(preamble=str_preamble, whole=whole, fraction=fraction)
