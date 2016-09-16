@@ -17,6 +17,8 @@ a sample of how it should look like:
 import datetime
 import math
 import re
+
+
 SOFTUNI_ADDRESS = 'Software University, Sofia'
 SOFIA_TIMEZONE = 'Europe/Sofia'
 BULGARIAN_MONTHS = {'януари': 1, 'февруари': 2, 'март': 3, 'април': 4, 'май': 5, 'юни': 6, 'юли': 7, 'август': 8, 'септември': 9, 'октомври': 10, 'ноември': 11, 'декември': 12}
@@ -46,7 +48,8 @@ def convert_lecture_to_json(lecture):
 
 def convert_date_to_iso8601(date) -> tuple:
     """ converts the date to a string object with the iso8601 format, which we give to the google API as a string"""
-    date_pattern = r'Дата:\s+(\d{1,2}).*(януари|февруари|март|април|май|юни|юли|август|септември|октомври|ноември|декември).+?(\d{1,2}(:|;)\d{1,2}).+?(\d{1,2}(:|;)\d{1,2})'
+    ''' if there are two dates, like for a retake exam, only the first one will be taken'''
+    date_pattern = r'Дата:\s+(\d{1,2}).*?(януари|февруари|март|април|май|юни|юли|август|септември|октомври|ноември|декември).+?(\d{1,2}(:|;)\d{1,2}).+?(\d{1,2}(:|;)\d{1,2})'
     match = re.match(date_pattern, date)
 
     date_day = match.group(1).zfill(2)  # 04
